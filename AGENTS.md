@@ -1,13 +1,11 @@
 # AGENTS.md
 
-This repository contains the Perennia Light Vue 3 TypeScript frontend.
-
 This file defines the repository-specific working rules for agents and automated contributors.
 
 ## Mandatory project rules (top priority)
 
-These rules are the top-priority repository instructions for agents working in `perennia.light.ui`.
-When a task also touches backend files, follow `Perennia.API\AGENTS.md` for the backend side and keep both projects aligned.
+These rules are the top-priority repository instructions for agents working in `QA-Checklist`.
+
 
 - Current frontend stack: Vue 3, TypeScript, Vite, Vuetify 3, Pinia, Vue Router, Axios, ESLint, and Prettier.
 - Keep frontend work layered:
@@ -87,29 +85,6 @@ When a task also touches backend files, follow `Perennia.API\AGENTS.md` for the 
 - Maintain readable contrast and avoid text overflow or overlap at mobile and desktop breakpoints.
 - Keep text concise and domain-specific; avoid in-app instructional copy that explains obvious UI mechanics.
 
-## Backend/frontend contract alignment
-
-- Treat backend responses as typed contracts, not loose data blobs.
-- The backend project is `Perennia.API`; every frontend request and response model must stay coherent with the backend endpoint implementation.
-- When changing frontend request payloads or expected responses, verify the matching contract in `Perennia.API` and adapt both sides when needed.
-- If a feature requires additional backend response properties, update the typed backend DTO/response first and then align the frontend model.
-- Keep enum numeric values in frontend models aligned with backend enum values.
-- Trust-related frontend contracts, including `src\models\trusts\TrustModels.ts`, must stay aligned with backend trust DTOs and enums in `Perennia.API`.
-- Configuration values consumed by the frontend must stay coherent with `Perennia.API\common\Middleware\Configuration\ConfigurationParameters.cs`.
-- `reportService.getConfigurationParameter(...)` must use the backend configuration type as the source of truth. A backend `bool` must be handled as a frontend boolean, and a backend `int` must be handled as a frontend number.
-
-## Permissions
-
-- Permission keys and endpoint claims in `src\components\composables\permissions\endpoints.ts` must stay coherent with `Perennia.API\gateway\Context\Configurations\EndpointConfiguration.cs`.
-- When adding, renaming, or removing a frontend endpoint permission key, update the backend claim configuration in the same task.
-- For backend role/permission endpoint additions linked to frontend permissions, follow `Perennia.API\gateway\Permissions.md`.
-- Backend permission additions must include `Endpoint`, `ClaimEndpointAction`, and `RoleEndpointAction`.
-- Bind new backend permission endpoint additions to the `operations.base` claim unless explicitly told otherwise.
-- Respect the `%` path convention for backend permission route parameters.
-- For backend role/permission endpoint additions, always generate a new GUID.
-- Never use deterministic or placeholder GUIDs, such as `00000000-0000-0000-0000-000000000784`, and never copy or reuse an existing GUID for a different permission.
-- In Vue components, use `Actions`, `Endpoints`, `endpointPath(...)`, or `endpointPathWithParams(...)` from `src\components\composables\permissions\endpoints.ts` instead of repeating permission keys or API paths as string literals when a shared constant already exists.
-
 ## Refactoring policy
 
 - Leave untouched areas alone unless they must change for the task.
@@ -147,14 +122,6 @@ When a task also touches backend files, follow `Perennia.API\AGENTS.md` for the 
 - Vuetify forms: https://vuetifyjs.com/en/components/forms/
 - Vuetify display and platform utilities: https://vuetifyjs.com/en/features/display-and-platform/
 - Vuetify accessibility: https://vuetifyjs.com/en/getting-started/accessibility/
-
-## Assistant knowledge documentation
-
-- For every user story that changes a visible Perennia workflow, update the corresponding guide under the sibling `Perennia.API/ai/perennia.light.ai/KnowledgeBase/Guides` in the same delivery.
-- Regenerate all localized `interface-catalog` files with `npm run generate:ai-interface -- <API-worktree>/ai/perennia.light.ai/KnowledgeBase` after changing a route, search filter, form control, or page action. Review the generated entry against the changed UI; source-derived labels and event handlers alone do not establish a verified user procedure.
-- Replace screenshots when the affected UI changes. Capture the feature branch with approved demonstration data, remove personal or confidential information, and verify the image at relevant desktop and mobile sizes.
-- Keep localized guides aligned where the workflow appears in multiple guides. Note the work item and current behavior in source metadata, and verify the updated guide can be reindexed with working citations.
-- If the story does not affect documented behavior or screenshots, say so in the PR.
 
 ## Expected outcome
 
