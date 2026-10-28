@@ -3,116 +3,136 @@ import type { ChecklistDocument } from '@/models/checklists/ChecklistDocument'
 import type { ChecklistParent } from '@/models/checklists/ChecklistParent'
 import type { TestCase } from '@/models/checklists/TestCase'
 import type { TestCaseStatus } from '@/models/checklists/TestCaseStatus'
+import { LocalizedError, translate } from '@/i18n'
 
 export const MAX_CHECKLIST_JSON_BYTES = 5 * 1024 * 1024
 const MAX_TEXT_LENGTH = 100_000
 const TEST_CASE_STATUSES: readonly TestCaseStatus[] = ['notRun', 'passed', 'failed']
 
-function fail(message: string): never {
-  throw new Error(`Fichier de checklists invalide : ${message}`)
+type ErrorParams = Record<string, string | number> | (() => Record<string, string | number>)
+
+function fail(key: string, params?: ErrorParams): never {
+  throw new LocalizedError('errors.serializer.invalidFile', () => ({
+    detail: translate(key, typeof params === 'function' ? params() : params),
+  }))
 }
 
-function readObject(value: unknown, label: string): Record<string, unknown> {
+function fieldParams(labelKey: string): Record<string, string> {
+  return { label: translate(labelKey) }
+}
+
+function readObject(value: unknown, labelKey: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return fail(`${label} doit être un objet.`)
+    return fail('errors.serializer.objectExpected', () => fieldParams(labelKey))
   }
   return value as Record<string, unknown>
 }
 
-function readString(value: unknown, label: string, required = false): string {
+function readString(value: unknown, labelKey: string, required = false): string {
   if (typeof value !== 'string' || value.length > MAX_TEXT_LENGTH) {
-    return fail(`${label} doit être un texte de moins de ${MAX_TEXT_LENGTH} caractères.`)
+    return fail('errors.serializer.textExpected', () => ({
+      ...fieldParams(labelKey),
+      maxLength: MAX_TEXT_LENGTH,
+    }))
   }
-  if (required && !value.trim()) return fail(`${label} est obligatoire.`)
+  if (required && !value.trim()) {
+    return fail('errors.serializer.required', () => fieldParams(labelKey))
+  }
   return value
 }
 
-function readArray(value: unknown, label: string): unknown[] {
-  if (!Array.isArray(value)) return fail(`${label} doit être un tableau.`)
+function readArray(value: unknown, labelKey: string): unknown[] {
+  if (!Array.isArray(value)) {
+    return fail('errors.serializer.arrayExpected', () => fieldParams(labelKey))
+  }
   return value
 }
 
-function readDate(value: unknown, label: string): string {
-  const date = readString(value, label, true)
-  if (Number.isNaN(Date.parse(date))) return fail(`${label} doit être une date valide.`)
+function readDate(value: unknown, labelKey: string): string {
+  const date = readString(value, labelKey, true)
+  if (Number.isNaN(Date.parse(date))) {
+    return fail('errors.serializer.dateExpected', () => fieldParams(labelKey))
+  }
   return date
 }
 
-function assertUniqueIds(values: readonly { id: string }[], label: string): void {
+function assertUniqueIds(values: readonly { id: string }[], labelKey: string): void {
   const ids = new Set<string>()
   for (const value of values) {
-    if (ids.has(value.id)) fail(`${label} contient un identifiant en double.`)
+    if (ids.has(value.id)) {
+      fail('errors.serializer.duplicateId', () => fieldParams(labelKey))
+    }
     ids.add(value.id)
   }
 }
 
 function readParent(value: unknown): ChecklistParent {
-  const parent = readObject(value, 'Un parent')
+  const parent = readObject(value, 'errors.fields.parent')
   return {
-    id: readString(parent.id, 'L’identifiant du parent', true),
-    name: readString(parent.name, 'Le nom du parent', true),
+    id: readString(parent.id, 'errors.fields.parentId', true),
+    name: readString(parent.name, 'errors.fields.parentName', true),
   }
 }
 
 function readTestCase(value: unknown): TestCase {
-  const testCase = readObject(value, 'Un cas de test')
-  const status = readString(testCase.status, 'Le résultat du cas de test')
+  const testCase = readObject(value, 'errors.fields.testCase')
+  const status = readString(testCase.status, 'errors.fields.testCaseStatus')
   if (!TEST_CASE_STATUSES.includes(status as TestCaseStatus)) {
-    return fail('Le résultat doit être notRun, passed ou failed.')
+    return fail('errors.serializer.invalidStatus')
   }
-  const expectedResults = readArray(testCase.expectedResults, 'Les résultats attendus').map(
-    (result) => readString(result, 'Un résultat attendu', true),
+  const expectedResults = readArray(testCase.expectedResults, 'errors.fields.expectedResults').map(
+    (result) => readString(result, 'errors.fields.expectedResult', true),
   )
-  if (!expectedResults.length) return fail('Ajoutez au moins un résultat attendu par cas de test.')
+  if (!expectedResults.length) return fail('errors.serializer.expectedResultRequired')
   return {
-    id: readString(testCase.id, 'L’identifiant du cas de test', true),
-    title: readString(testCase.title, 'Le titre du cas de test', true),
-    description: readString(testCase.description, 'La description du cas de test'),
+    id: readString(testCase.id, 'errors.fields.testCaseId', true),
+    title: readString(testCase.title, 'errors.fields.testCaseTitle', true),
+    description: readString(testCase.description, 'errors.fields.testCaseDescription'),
     expectedResults,
     status: status as TestCaseStatus,
   }
 }
 
 function readChecklist(value: unknown): Checklist {
-  const checklist = readObject(value, 'Une checklist')
-  const testCases = readArray(checklist.testCases, 'Les cas de test').map(readTestCase)
-  assertUniqueIds(testCases, 'La checklist')
+  const checklist = readObject(value, 'errors.fields.checklist')
+  const testCases = readArray(checklist.testCases, 'errors.fields.testCases').map(readTestCase)
+  assertUniqueIds(testCases, 'errors.fields.checklist')
   return {
-    id: readString(checklist.id, 'L’identifiant de la checklist', true),
-    parentId: readString(checklist.parentId, 'Le parent de la checklist', true),
-    title: readString(checklist.title, 'Le titre de la checklist', true),
-    description: readString(checklist.description, 'La description de la checklist'),
+    id: readString(checklist.id, 'errors.fields.checklistId', true),
+    parentId: readString(checklist.parentId, 'errors.fields.checklistParent', true),
+    title: readString(checklist.title, 'errors.fields.checklistTitle', true),
+    description: readString(checklist.description, 'errors.fields.checklistDescription'),
     testCases,
-    createdAt: readDate(checklist.createdAt, 'La date de création'),
-    updatedAt: readDate(checklist.updatedAt, 'La date de modification'),
+    createdAt: readDate(checklist.createdAt, 'errors.fields.createdAt'),
+    updatedAt: readDate(checklist.updatedAt, 'errors.fields.updatedAt'),
   }
 }
 
 function validateDocument(value: unknown): ChecklistDocument {
-  const document = readObject(value, 'Le document')
+  const document = readObject(value, 'errors.fields.document')
   if (document.schemaVersion !== 1) {
-    return fail('La version du format n’est pas prise en charge (version attendue : 1).')
+    return fail('errors.serializer.unsupportedVersion')
   }
-  const parents = readArray(document.parents, 'Les parents').map(readParent)
-  const checklists = readArray(document.checklists, 'Les checklists').map(readChecklist)
-  assertUniqueIds(parents, 'La liste des parents')
-  assertUniqueIds(checklists, 'La liste des checklists')
+  const parents = readArray(document.parents, 'errors.fields.parents').map(readParent)
+  const checklists = readArray(document.checklists, 'errors.fields.checklists').map(readChecklist)
+  assertUniqueIds(parents, 'errors.fields.parentList')
+  assertUniqueIds(checklists, 'errors.fields.checklistList')
   const parentIds = new Set(parents.map((parent) => parent.id))
   if (checklists.some((checklist) => !parentIds.has(checklist.parentId))) {
-    return fail('Une checklist fait référence à un parent absent.')
+    return fail('errors.serializer.missingParent')
   }
   return { schemaVersion: 1, parents, checklists }
 }
 
 export function parseChecklistDocument(json: string): ChecklistDocument {
   if (new TextEncoder().encode(json).byteLength > MAX_CHECKLIST_JSON_BYTES) {
-    return fail('Le fichier dépasse 5 Mo.')
+    return fail('errors.serializer.fileTooLarge')
   }
   let value: unknown
   try {
     value = JSON.parse(json.replace(/^\uFEFF/, '')) as unknown
   } catch {
-    return fail('Le contenu JSON ne peut pas être lu.')
+    return fail('errors.serializer.invalidJson')
   }
   return validateDocument(value)
 }
@@ -123,7 +143,7 @@ export function serializeChecklistDocument(document: ChecklistDocument): string 
 
 export function serializeSingleChecklist(document: ChecklistDocument, checklistId: string): string {
   const checklist = document.checklists.find((item) => item.id === checklistId)
-  if (!checklist) throw new Error('Cette checklist est introuvable.')
+  if (!checklist) throw new LocalizedError('data.checklistNotFound')
   return serializeChecklistDocument({
     schemaVersion: 1,
     parents: document.parents.filter((parent) => parent.id === checklist.parentId),

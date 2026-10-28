@@ -4,7 +4,9 @@ Vérifications effectuées le 27 octobre 2026. Application locale uniquement; au
 
 ## Impact
 
-Application Vue 3 et Vuetify en français pour gérer des catégories et des checklists de test. Chaque cas présente son titre, sa description, les résultats attendus et un résultat à trois états. Après choix et autorisation du dossier dans Chrome/Edge, les données sont enregistrées automatiquement dans `Documents/QAChecklist/checklists.json`, avec copie précédente dans `checklists.previous.json`. Le cache du navigateur reste indépendant. Le script PowerShell prépare le déploiement du dernier commit local de `master` dans Docker Desktop, sans backend ni volume de données.
+Application Vue 3 et Vuetify en français et en anglais pour gérer des catégories et des checklists de test. Chaque cas présente son titre, sa description, les résultats attendus et un résultat à trois états. Après choix et autorisation du dossier dans Chrome/Edge, les données sont enregistrées automatiquement dans `Documents/QAChecklist/checklists.json`, avec copie précédente dans `checklists.previous.json`. Le cache du navigateur reste indépendant. Le script PowerShell prépare le déploiement du dernier commit local de `master` dans Docker Desktop, sans backend ni volume de données.
+
+Le sélecteur Vuetify en haut à droite change immédiatement la langue et mémorise le choix sous `qa-checklist.locale.v1`. Les deux fichiers `src/locales/fr.json` et `src/locales/en.json` contiennent chacun 219 clés. Les formulaires, validations, notifications, confirmations, messages de sauvegarde, erreurs et libellés accessibles sont traduits; Vuetify, la langue HTML et les heures suivent ce choix. Les erreurs conservent leur clé de traduction pour que les messages déjà affichés puissent changer de langue. Le contenu saisi et le JSON des checklists ne sont pas réécrits.
 
 ## Résultats
 
@@ -12,7 +14,7 @@ Application Vue 3 et Vuetify en français pour gérer des catégories et des che
 | ----------------------------------------------- | ----------------------------------- |
 | `npm run lint`                                  | Réussi, ESLint 10                   |
 | `npm run type-check`                            | Réussi                              |
-| `npm run test`                                  | 42 tests réussis, 4 fichiers        |
+| `npm run test`                                  | 53 tests réussis, 6 fichiers        |
 | `npm run build`                                 | Réussi, build statique dans `dist/` |
 | `npm run format:check`                          | Réussi                              |
 | Audit npm après installation                    | Aucune vulnérabilité signalée       |
@@ -24,19 +26,35 @@ Les tests automatisés vérifient les imports invalides, les relations entre cat
 
 Le localStorage, le sélecteur de dossier, les handles de fichiers, les permissions et les métadonnées IndexedDB sont simulés pour ces tests. Aucun accès réel au dossier Documents n’a été effectué. Les tests ne valident donc pas le dialogue natif d’autorisation du navigateur ni les droits réels du dossier Windows : ils doivent être confirmés lors de la première connexion du dossier depuis l’application.
 
+Les tests de traduction vérifient la parité des clés, les valeurs non vides, le français par défaut, la préférence anglaise après rechargement, le repli après une valeur invalide ou un stockage inaccessible, la traduction des erreurs retenues et la conservation des données. Un contrôle supplémentaire a compilé les 438 messages, comparé leurs paramètres et vérifié 252 références de traduction dans les sources : aucune clé manquante ni divergence de paramètres.
+
 Les vérifications dans le navigateur ont couvert : formulaire avec parent obligatoire, création de checklist, ajout et renommage d’une catégorie, création des cas de test, boutons Réussi et Échoué, conservation après rechargement, remise à zéro confirmée, export JSON téléchargé puis réimporté en ajout, suppression confirmée de la copie et import de remplacement confirmé. Les dimensions testées incluent 1440 × 960, 390 × 844 et 320 × 740, sans débordement horizontal constaté. Les formulaires et le tiroir mobile ont été vérifiés.
 
-Le nouveau panneau de sauvegarde a été contrôlé visuellement dans un aperçu isolé sur le port 4173, aux formats ordinateur 1440 × 960 et mobile 390 × 844 et 320 × 740. Les actions se replient sans débordement horizontal et la console ne signale aucune erreur ni alerte. Les captures montrent l’espace vierge et le bouton initial de connexion du dossier; elles ne représentent pas une autorisation disque déjà accordée. Les données existantes du navigateur de développement sur le port 5173 n’ont pas été modifiées.
+Le panneau de sauvegarde et le sélecteur de langue ont été contrôlés visuellement dans un aperçu isolé sur le port 4173, aux formats ordinateur 1440 × 960 et mobile 390 × 844 et 320 × 740. Les actions se replient sans débordement horizontal et la console ne signale aucune erreur ni alerte. Les vérifications bilingues couvrent le changement immédiat, la langue après rechargement, les catégories initiales, les validations anglaises, la prévention d’un nom de catégorie déjà affiché, les états et libellés du tableau, l’import invalide et les confirmations françaises. Le contenu de démonstration saisi en français reste en français dans l’interface anglaise, et le résultat Réussi est conservé lors du changement. Ces données de démonstration ont été retirées après vérification. Les données existantes du navigateur de développement sur le port 5173 n’ont pas été modifiées.
 
 Le build et le démarrage Docker n’ont pas été exécutés, à la demande du développeur. La syntaxe PowerShell ne valide pas l’exécution réelle de Docker ou de Nginx. Le premier déploiement exige de commiter les fichiers de l’application sur la branche locale `master`.
 
-## Captures du panneau de sauvegarde
+## Captures de l’interface bilingue
 
-[Vue mobile](screenshots/mobile.jpg)
+[Vue mobile en français](screenshots/mobile.jpg)
 
-![Vue ordinateur](screenshots/desktop.jpg)
+![Vue ordinateur en anglais, avec contenu saisi conservé](screenshots/desktop.jpg)
 
 ## Fichiers créés
+
+Ajouts pour les langues :
+
+- `src/locales/fr.json`
+- `src/locales/en.json`
+- `src/i18n/index.ts`
+- `src/i18n/instance.ts`
+- `src/models/localization/AppLocale.ts`
+- `src/models/localization/TranslationParams.ts`
+- `src/models/localization/LocalizedError.ts`
+- `tests/i18n.test.ts`
+- `tests/i18nData.test.ts`
+
+Modifications pour cette évolution : `src/App.vue`, `src/main.ts`, les cinq composants de `src/components`, `src/views/ChecklistWorkspaceView.vue`, `src/store/checklistStore.ts`, les cinq services de `src/services`, `src/models/checklists/ChecklistStorageSnapshot.ts`, `package.json`, `package-lock.json`, `AGENTS.md`, `README.md`, ce rapport et les deux captures. Les chemins de fichiers, les états métier et le format JSON restent compatibles.
 
 Ajouts pour la sauvegarde sur disque :
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { VForm } from 'vuetify/components'
 import type { ChecklistParent } from '@/models/checklists/ChecklistParent'
 
@@ -16,6 +17,7 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), { parent: null })
 const emit = defineEmits<Emits>()
+const { t, locale } = useI18n()
 const form = ref<InstanceType<typeof VForm> | null>(null)
 const name = ref('')
 const saving = ref(false)
@@ -30,14 +32,14 @@ function normalizeName(value: string): string {
 }
 
 const NAME_RULES = [
-  (value: string) => Boolean(value.trim()) || 'Le nom est obligatoire.',
-  (value: string) => value.trim().length <= 80 || '80 caractères maximum.',
+  (value: string) => Boolean(value.trim()) || t('components.parentEditor.nameRequired'),
+  (value: string) => value.trim().length <= 80 || t('components.parentEditor.nameTooLong'),
   (value: string) => {
     const normalized = normalizeName(value)
     if (props.parent && normalized === normalizeName(props.parent.name)) return true
     return (
       !props.existingNames.some((existingName) => normalizeName(existingName) === normalized) ||
-      'Un parent porte déjà ce nom.'
+      t('components.parentEditor.nameDuplicate')
     )
   },
 ]
@@ -52,6 +54,13 @@ watch(
   },
   { immediate: true },
 )
+
+watch(locale, async () => {
+  if (props.modelValue && form.value?.isValid === false) {
+    await nextTick()
+    await form.value?.validate()
+  }
+})
 
 async function submit(): Promise<void> {
   if (saving.value) return
@@ -78,12 +87,14 @@ async function submit(): Promise<void> {
     <v-card rounded="lg">
       <v-form ref="form" validate-on="submit" @submit.prevent="submit">
         <v-card-title id="parent-dialog-title" class="pt-6 px-6">
-          {{ isEditing ? 'Renommer le parent' : 'Nouveau parent' }}
+          {{
+            t(isEditing ? 'components.parentEditor.editTitle' : 'components.parentEditor.newTitle')
+          }}
         </v-card-title>
         <v-card-text class="px-6 pt-4 pb-0">
           <v-text-field
             v-model="name"
-            label="Nom du parent"
+            :label="t('components.parentEditor.nameLabel')"
             :rules="NAME_RULES"
             maxlength="80"
             autofocus
@@ -91,10 +102,10 @@ async function submit(): Promise<void> {
         </v-card-text>
         <v-card-actions class="px-6 pb-5 flex-wrap justify-end ga-2">
           <v-btn class="ma-0" :disabled="saving" @click="emit('update:modelValue', false)">
-            Annuler
+            {{ t('common.cancel') }}
           </v-btn>
           <v-btn class="ma-0" type="submit" color="primary" variant="flat" :loading="saving">
-            {{ isEditing ? 'Enregistrer' : 'Créer le parent' }}
+            {{ t(isEditing ? 'common.save' : 'components.parentEditor.createButton') }}
           </v-btn>
         </v-card-actions>
       </v-form>

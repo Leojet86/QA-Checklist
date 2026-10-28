@@ -1,15 +1,18 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { createVuetify } from 'vuetify'
-import { fr } from 'vuetify/locale'
+import { en, fr } from 'vuetify/locale'
 import '@mdi/font/css/materialdesignicons.css'
 import 'vuetify/styles'
 import '@/styles/main.css'
 import App from '@/App.vue'
 import { router } from '@/router'
+import { i18n, initializeAppLocale } from '@/i18n'
+
+initializeAppLocale()
 
 const vuetify = createVuetify({
-  locale: { locale: 'fr', messages: { fr } },
+  locale: { locale: i18n.global.locale.value, fallback: 'fr', messages: { fr, en } },
   theme: {
     defaultTheme: 'checklist',
     themes: {
@@ -37,4 +40,4 @@ const vuetify = createVuetify({
   },
 })
 
-createApp(App).use(createPinia()).use(router).use(vuetify).mount('#app')
+createApp(App).use(createPinia()).use(router).use(i18n).use(vuetify).mount('#app')

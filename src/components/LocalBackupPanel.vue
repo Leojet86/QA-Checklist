@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { DiskBackupState } from '@/models/storage/DiskBackupState'
 
 interface Props {
@@ -22,6 +23,7 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+const { t, locale } = useI18n()
 
 const filePath = computed(() => `${props.directoryName || 'QAChecklist'}/checklists.json`)
 const isBusy = computed(() => props.state === 'loading' || props.state === 'saving')
@@ -41,41 +43,41 @@ const statusColor = computed(() => {
 const statusTitle = computed(() => {
   switch (props.state) {
     case 'loading':
-      return 'Ouverture de la sauvegarde…'
+      return t('components.localBackup.loadingTitle')
     case 'saving':
-      return 'Enregistrement du fichier…'
+      return t('components.localBackup.savingTitle')
     case 'ready':
-      return 'Sauvegarde sur ce PC'
+      return t('components.localBackup.readyTitle')
     case 'permissionRequired':
-      return 'Accès au dossier à réactiver'
+      return t('components.localBackup.permissionTitle')
     case 'error':
-      return 'Sauvegarde du fichier interrompue'
+      return t('components.localBackup.errorTitle')
     case 'review':
-      return 'Sauvegarde du dossier en attente'
+      return t('components.localBackup.reviewTitle')
     case 'unsupported':
-      return 'Sauvegarde directe indisponible dans ce navigateur'
+      return t('components.localBackup.unsupportedTitle')
     default:
-      return 'Sauvegarder dans Documents\\QAChecklist'
+      return t('components.localBackup.disconnectedTitle')
   }
 })
 const savedMessage = computed(() => {
-  if (props.pending) return 'Des modifications attendent leur enregistrement dans le fichier.'
-  if (!props.lastSavedAt) return 'Dossier connecté.'
+  if (props.pending) return t('components.localBackup.pendingMessage')
+  if (!props.lastSavedAt) return t('components.localBackup.connectedMessage')
   const savedAt = new Date(props.lastSavedAt)
-  if (Number.isNaN(savedAt.getTime())) return 'Enregistré sur le disque.'
-  const time = new Intl.DateTimeFormat('fr-CA', {
+  if (Number.isNaN(savedAt.getTime())) return t('components.localBackup.savedMessage')
+  const time = new Intl.DateTimeFormat(locale.value === 'en' ? 'en-CA' : 'fr-CA', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   }).format(savedAt)
-  return `Enregistré à ${time}.`
+  return t('components.localBackup.savedAt', { time })
 })
 </script>
 
 <template>
   <section
     class="backup-panel border rounded-lg bg-surface pa-4 mb-6"
-    aria-label="Sauvegarde des fichiers sur ce PC"
+    :aria-label="t('components.localBackup.regionLabel')"
   >
     <div class="d-flex align-start ga-3">
       <v-progress-circular
@@ -97,33 +99,30 @@ const savedMessage = computed(() => {
               {{ savedMessage }}
             </p>
             <p v-else class="text-caption text-medium-emphasis mt-1">
-              Attendez la confirmation d’enregistrement avant de fermer l’application.
+              {{ t('components.localBackup.savingNotice') }}
             </p>
           </template>
           <p v-else-if="state === 'disconnected'" class="text-body-2 text-medium-emphasis mt-1">
-            Choisissez Documents ou son sous-dossier QAChecklist pour activer la sauvegarde JSON. Le
-            navigateur demandera l’accès. Sans dossier connecté, seul le cache du navigateur est
-            utilisé.
+            {{ t('components.localBackup.disconnectedMessage') }}
           </p>
           <p
             v-else-if="state === 'permissionRequired'"
             class="text-body-2 text-medium-emphasis mt-1"
           >
-            Réautorisez l’accès à {{ directoryName || 'QAChecklist' }} pour reprendre la sauvegarde
-            et retrouver le fichier sur le disque.
-          </p>
-          <p v-else-if="state === 'unsupported'" class="text-body-2 text-medium-emphasis mt-1">
-            Ouvrez l’application dans Chrome ou Edge pour utiliser Documents\QAChecklist. L’export
-            JSON reste disponible.
-          </p>
-          <p v-else-if="state === 'error'" class="text-body-2 text-pre-wrap mt-1" role="alert">
             {{
-              error ||
-              'Le fichier n’a pas pu être enregistré. Exportez les données affichées avant de fermer la page.'
+              t('components.localBackup.permissionMessage', {
+                directory: directoryName || 'QAChecklist',
+              })
             }}
           </p>
+          <p v-else-if="state === 'unsupported'" class="text-body-2 text-medium-emphasis mt-1">
+            {{ t('components.localBackup.unsupportedMessage') }}
+          </p>
+          <p v-else-if="state === 'error'" class="text-body-2 text-pre-wrap mt-1" role="alert">
+            {{ error || t('components.localBackup.errorMessage') }}
+          </p>
           <p v-else-if="state === 'review'" class="text-body-2 text-medium-emphasis mt-1">
-            Le fichier existant est conservé jusqu’à votre choix.
+            {{ t('components.localBackup.reviewNotice') }}
           </p>
         </div>
 
@@ -135,7 +134,7 @@ const savedMessage = computed(() => {
             size="small"
             prepend-icon="mdi-folder-open-outline"
             @click="emit('connect')"
-            >Choisir le dossier Documents</v-btn
+            >{{ t('components.localBackup.chooseDocuments') }}</v-btn
           >
           <template v-else-if="state === 'permissionRequired'">
             <v-btn
@@ -144,11 +143,11 @@ const savedMessage = computed(() => {
               size="small"
               prepend-icon="mdi-folder-key-outline"
               @click="emit('resume')"
-              >Reconnecter le dossier</v-btn
+              >{{ t('components.localBackup.reconnectFolder') }}</v-btn
             >
-            <v-btn variant="text" size="small" @click="emit('connect')"
-              >Choisir un autre dossier</v-btn
-            >
+            <v-btn variant="text" size="small" @click="emit('connect')">{{
+              t('components.localBackup.chooseAnotherFolder')
+            }}</v-btn>
           </template>
           <template v-else-if="state === 'error'">
             <v-btn
@@ -157,11 +156,11 @@ const savedMessage = computed(() => {
               size="small"
               prepend-icon="mdi-refresh"
               @click="emit('retry')"
-              >Réessayer</v-btn
+              >{{ t('common.retry') }}</v-btn
             >
-            <v-btn variant="text" size="small" @click="emit('connect')"
-              >Reconnecter le dossier</v-btn
-            >
+            <v-btn variant="text" size="small" @click="emit('connect')">{{
+              t('components.localBackup.reconnectFolder')
+            }}</v-btn>
           </template>
           <v-btn
             v-else-if="state === 'ready' || state === 'saving'"
@@ -169,7 +168,7 @@ const savedMessage = computed(() => {
             size="small"
             :disabled="isBusy"
             @click="emit('connect')"
-            >Changer de dossier</v-btn
+            >{{ t('components.localBackup.changeFolder') }}</v-btn
           >
           <v-btn
             v-if="
@@ -182,7 +181,7 @@ const savedMessage = computed(() => {
             size="small"
             prepend-icon="mdi-export"
             @click="emit('export')"
-            >Exporter les données affichées</v-btn
+            >{{ t('components.localBackup.exportDisplayed') }}</v-btn
           >
         </div>
         <p v-if="metadataError" class="text-caption text-medium-emphasis text-pre-wrap mt-3">
@@ -199,7 +198,7 @@ const savedMessage = computed(() => {
       aria-live="polite"
     >
       <v-progress-circular indeterminate color="primary" size="32" aria-hidden="true" />
-      <p class="text-body-2">Ouverture de la sauvegarde…</p>
+      <p class="text-body-2">{{ t('components.localBackup.loadingTitle') }}</p>
     </div>
   </v-overlay>
 
@@ -210,16 +209,16 @@ const savedMessage = computed(() => {
     aria-labelledby="disk-review-title"
   >
     <v-card>
-      <v-card-title id="disk-review-title" class="px-6 pt-6"
-        >Une sauvegarde existe dans ce dossier</v-card-title
-      >
+      <v-card-title id="disk-review-title" class="px-6 pt-6">{{
+        t('components.localBackup.conflictTitle')
+      }}</v-card-title>
       <v-card-text class="px-6 pt-3">
         <p class="text-body-2">
-          Le fichier checklists.json et les données affichées sont différents.
+          {{ t('components.localBackup.conflictMessage') }}
         </p>
         <p class="text-body-2 mt-3">
-          <strong>Charger le fichier remplacera les données affichées.</strong> Vous pouvez les
-          exporter avant de continuer, ou fusionner les deux listes de checklists.
+          <strong>{{ t('components.localBackup.loadWarning') }}</strong>
+          {{ t('components.localBackup.conflictAdvice') }}
         </p>
         <v-btn
           class="mt-4 review-export"
@@ -227,17 +226,17 @@ const savedMessage = computed(() => {
           size="small"
           prepend-icon="mdi-export"
           @click="emit('export')"
-          >Exporter les données affichées</v-btn
+          >{{ t('components.localBackup.exportDisplayed') }}</v-btn
         >
       </v-card-text>
       <v-card-actions class="backup-actions px-6 pb-5 flex-wrap justify-end ga-2">
-        <v-btn class="ma-0" variant="text" @click="emit('cancel')">Annuler</v-btn>
-        <v-btn class="ma-0" color="primary" variant="outlined" @click="emit('resolve', 'merge')"
-          >Fusionner les checklists</v-btn
-        >
-        <v-btn class="ma-0" color="primary" variant="flat" @click="emit('resolve', 'load')"
-          >Charger le fichier</v-btn
-        >
+        <v-btn class="ma-0" variant="text" @click="emit('cancel')">{{ t('common.cancel') }}</v-btn>
+        <v-btn class="ma-0" color="primary" variant="outlined" @click="emit('resolve', 'merge')">{{
+          t('components.localBackup.mergeButton')
+        }}</v-btn>
+        <v-btn class="ma-0" color="primary" variant="flat" @click="emit('resolve', 'load')">{{
+          t('components.localBackup.loadButton')
+        }}</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>

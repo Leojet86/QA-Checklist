@@ -1,4 +1,5 @@
 import { MAX_CHECKLIST_JSON_BYTES } from '@/services/checklistJsonSerializer'
+import { LocalizedError } from '@/i18n'
 
 export function downloadJson(contents: string, name: string): void {
   const filename = name
@@ -19,7 +20,7 @@ export function downloadJson(contents: string, name: string): void {
 
 export async function readJsonFile(file: File): Promise<string> {
   if (file.size > MAX_CHECKLIST_JSON_BYTES) {
-    throw new Error('Le fichier dépasse la limite de 5 Mo.')
+    throw new LocalizedError('errors.file.tooLarge')
   }
   return file.text()
 }

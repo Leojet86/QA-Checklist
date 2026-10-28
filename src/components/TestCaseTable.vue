@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useDisplay } from 'vuetify'
 import type { TestCase } from '@/models/checklists/TestCase'
 import type { TestCaseStatus } from '@/models/checklists/TestCaseStatus'
@@ -22,15 +24,34 @@ interface StatusOption {
 
 defineProps<Props>()
 const emit = defineEmits<Emits>()
+const { t } = useI18n()
 const { smAndDown } = useDisplay()
-const STATUS_OPTIONS: StatusOption[] = [
-  { value: 'notRun', label: 'Non exécuté', icon: 'mdi-circle-outline', color: 'secondary' },
-  { value: 'passed', label: 'Réussi', icon: 'mdi-check', color: 'success' },
-  { value: 'failed', label: 'Échoué', icon: 'mdi-close', color: 'error' },
-]
+const statusOptions = computed<StatusOption[]>(() => [
+  {
+    value: 'notRun',
+    label: t('components.testCaseTable.notRun'),
+    icon: 'mdi-circle-outline',
+    color: 'secondary',
+  },
+  {
+    value: 'passed',
+    label: t('components.testCaseTable.passed'),
+    icon: 'mdi-check',
+    color: 'success',
+  },
+  {
+    value: 'failed',
+    label: t('components.testCaseTable.failed'),
+    icon: 'mdi-close',
+    color: 'error',
+  },
+])
 
 function statusLabel(status: TestCaseStatus): string {
-  return STATUS_OPTIONS.find((option) => option.value === status)?.label ?? 'Non exécuté'
+  return (
+    statusOptions.value.find((option) => option.value === status)?.label ??
+    t('components.testCaseTable.notRun')
+  )
 }
 
 function updateStatus(testCaseId: string, value: unknown): void {
@@ -47,9 +68,11 @@ function updateStatus(testCaseId: string, value: unknown): void {
   >
     <thead>
       <tr>
-        <th scope="col" class="case-column">Cas de test</th>
-        <th scope="col" class="expected-column">Résultats attendus</th>
-        <th scope="col" class="status-column">Résultat</th>
+        <th scope="col" class="case-column">{{ t('components.testCaseTable.caseColumn') }}</th>
+        <th scope="col" class="expected-column">
+          {{ t('components.testCaseTable.expectedColumn') }}
+        </th>
+        <th scope="col" class="status-column">{{ t('components.testCaseTable.statusColumn') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -73,18 +96,18 @@ function updateStatus(testCaseId: string, value: unknown): void {
                   size="small"
                   variant="text"
                   density="comfortable"
-                  :aria-label="`Actions pour ${testCase.title}`"
+                  :aria-label="t('components.testCaseTable.actionsFor', { title: testCase.title })"
                 />
               </template>
               <v-list density="compact">
                 <v-list-item
                   prepend-icon="mdi-pencil-outline"
-                  title="Modifier"
+                  :title="t('components.testCaseTable.editAction')"
                   @click="emit('edit', testCase)"
                 />
                 <v-list-item
                   prepend-icon="mdi-delete-outline"
-                  title="Supprimer"
+                  :title="t('common.delete')"
                   base-color="error"
                   @click="emit('delete', testCase)"
                 />
@@ -94,7 +117,7 @@ function updateStatus(testCaseId: string, value: unknown): void {
         </td>
         <td class="expected-cell">
           <div v-if="smAndDown" class="text-caption text-medium-emphasis font-weight-medium mb-2">
-            Résultats attendus
+            {{ t('components.testCaseTable.expectedColumn') }}
           </div>
           <ul class="expected-results text-body-2">
             <li v-for="(result, index) in testCase.expectedResults" :key="index">{{ result }}</li>
@@ -102,7 +125,7 @@ function updateStatus(testCaseId: string, value: unknown): void {
         </td>
         <td class="status-cell">
           <div v-if="smAndDown" class="text-caption text-medium-emphasis font-weight-medium mb-2">
-            Résultat
+            {{ t('components.testCaseTable.statusColumn') }}
           </div>
           <div class="status-control">
             <v-btn-toggle
@@ -112,15 +135,20 @@ function updateStatus(testCaseId: string, value: unknown): void {
               variant="outlined"
               density="comfortable"
               class="status-toggle"
-              :aria-label="`Résultat pour ${testCase.title}`"
+              :aria-label="t('components.testCaseTable.resultFor', { title: testCase.title })"
               @update:model-value="updateStatus(testCase.id, $event)"
             >
               <v-btn
-                v-for="option in STATUS_OPTIONS"
+                v-for="option in statusOptions"
                 :key="option.value"
                 :value="option.value"
                 :color="option.color"
-                :aria-label="`${option.label} : ${testCase.title}`"
+                :aria-label="
+                  t('components.testCaseTable.statusFor', {
+                    status: option.label,
+                    title: testCase.title,
+                  })
+                "
                 :aria-pressed="testCase.status === option.value"
                 :title="option.label"
                 size="small"
@@ -137,9 +165,11 @@ function updateStatus(testCaseId: string, value: unknown): void {
       <tr v-if="testCases.length === 0" class="empty-row">
         <td colspan="3" class="text-center py-12">
           <v-icon icon="mdi-format-list-checks" color="secondary" size="36" class="mb-3" />
-          <p class="text-body-1 font-weight-medium">Aucun cas de test</p>
+          <p class="text-body-1 font-weight-medium">
+            {{ t('components.testCaseTable.emptyTitle') }}
+          </p>
           <p class="text-body-2 text-medium-emphasis mt-1">
-            Ajoutez le premier cas à cette checklist.
+            {{ t('components.testCaseTable.emptyDescription') }}
           </p>
         </td>
       </tr>

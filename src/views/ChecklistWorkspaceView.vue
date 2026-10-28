@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDisplay } from 'vuetify'
+import { useI18n } from 'vue-i18n'
 import ChecklistEditorDialog from '@/components/ChecklistEditorDialog.vue'
 import ParentEditorDialog from '@/components/ParentEditorDialog.vue'
 import TestCaseEditorDialog from '@/components/TestCaseEditorDialog.vue'
@@ -13,17 +14,25 @@ import type { ChecklistDetails } from '@/models/checklists/ChecklistDetails'
 import type { TestCase } from '@/models/checklists/TestCase'
 import type { TestCaseDraft } from '@/models/checklists/TestCaseDraft'
 import type { TestCaseStatus } from '@/models/checklists/TestCaseStatus'
+import type { AppLocale } from '@/models/localization/AppLocale'
+import type { TranslationParams } from '@/models/localization/TranslationParams'
 import { useChecklistStore } from '@/store/checklistStore'
 import { downloadJson, readJsonFile } from '@/services/jsonFileService'
+import { isAppLocale, localizeError, setAppLocale } from '@/i18n'
 
 interface Confirmation {
-  title: string
-  message: string
-  label: string
+  titleKey: string
+  messageKey: string
+  labelKey: string
+  params?: TranslationParams
   destructive?: boolean
   action: () => void
 }
 
+type NotificationContent =
+  { kind: 'message'; key: string } | { kind: 'error'; error: unknown; fallbackKey: string }
+
+const { t, locale } = useI18n({ useScope: 'global' })
 const store = useChecklistStore()
 const {
   parents,
@@ -38,7 +47,7 @@ const {
   diskPending,
   diskMetadataError,
 } = storeToRefs(store)
-const { mdAndUp, smAndDown } = useDisplay()
+const { mdAndUp, smAndDown, xs } = useDisplay()
 const drawerOpen = ref(mdAndUp.value)
 const collapsedParents = ref<string[]>([])
 const checklistDialog = ref(false)
@@ -49,7 +58,7 @@ const testCaseDialog = ref(false)
 const editingTestCase = ref<TestCase | null>(null)
 const confirmation = ref<Confirmation | null>(null)
 const confirmationOpen = ref(false)
-const notification = ref('')
+const notification = shallowRef<NotificationContent | null>(null)
 const notificationOpen = ref(false)
 const notificationError = ref(false)
 const importInput = ref<HTMLInputElement | null>(null)
@@ -59,6 +68,35 @@ const importFilename = ref('')
 const importMode = ref<'merge' | 'replace'>('merge')
 const importing = ref(false)
 
+const languageOptions = computed(() => [
+  { title: t('language.french'), value: 'fr' },
+  { title: t('language.english'), value: 'en' },
+])
+const selectedLanguage = computed<AppLocale>({
+  get: () => (isAppLocale(locale.value) ? locale.value : 'fr'),
+  set: (value) => setAppLocale(value),
+})
+const notificationMessage = computed(() => {
+  const content = notification.value
+  if (!content) return ''
+  return content.kind === 'message'
+    ? t(content.key)
+    : localizeError(content.error, content.fallbackKey)
+})
+
+function parentDisplayName(parent: ChecklistParent): string {
+  if (parent.id === 'operations' && parent.name === 'Opération') return t('categories.operations')
+  if (parent.id === 'billing' && parent.name === 'Facturation') return t('categories.billing')
+  if (parent.id === 'funeral-home' && parent.name === 'Maison funéraire') {
+    return t('categories.funeralHome')
+  }
+  return parent.name
+}
+
+const parentOptions = computed(() =>
+  parents.value.map((parent) => ({ ...parent, name: parentDisplayName(parent) })),
+)
+
 watch(mdAndUp, (isDesktop) => {
   drawerOpen.value = isDesktop
 })
@@ -67,11 +105,11 @@ const persistenceNeedsAttention = computed(
   () => Boolean(storageError.value) || diskState.value === 'error',
 )
 const persistenceLabel = computed(() => {
-  if (diskState.value === 'saving') return 'Enregistrement du fichier…'
-  if (diskState.value === 'ready' && !diskPending.value) return 'Fichier enregistré sur ce PC'
-  if (diskState.value === 'error') return 'Sauvegarde du fichier à vérifier'
-  if (storageError.value) return 'Cache du navigateur à vérifier'
-  return 'Cache du navigateur'
+  if (diskState.value === 'saving') return t('workspace.persistence.saving')
+  if (diskState.value === 'ready' && !diskPending.value) return t('workspace.persistence.saved')
+  if (diskState.value === 'error') return t('workspace.persistence.fileError')
+  if (storageError.value) return t('workspace.persistence.cacheError')
+  return t('workspace.persistence.cache')
 })
 
 function preventClosingWithPendingBackup(event: BeforeUnloadEvent): void {
@@ -92,13 +130,18 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', preventClosingWithPendingBackup)
 })
 
-const parentNames = computed(() => parents.value.map((parent) => parent.name))
+const parentNames = computed(() =>
+  parents.value
+    .filter((parent) => parent.id !== editingParent.value?.id)
+    .flatMap((parent) => [parent.name, parentDisplayName(parent)]),
+)
 const selectedParent = computed(() =>
   parents.value.find((parent) => parent.id === selectedChecklist.value?.parentId),
 )
 const groupedParents = computed(() =>
   parents.value.map((parent) => ({
     ...parent,
+    displayName: parentDisplayName(parent),
     checklists: checklists.value.filter((checklist) => checklist.parentId === parent.id),
   })),
 )
@@ -112,9 +155,15 @@ const progress = computed(() =>
   counts.value.total ? ((counts.value.passed + counts.value.failed) / counts.value.total) * 100 : 0,
 )
 
-function notify(message: string, error = false): void {
-  notification.value = message
-  notificationError.value = error
+function notify(key: string): void {
+  notification.value = { kind: 'message', key }
+  notificationError.value = false
+  notificationOpen.value = true
+}
+
+function notifyError(error: unknown, fallbackKey = 'common.unexpectedError'): void {
+  notification.value = { kind: 'error', error, fallbackKey }
+  notificationError.value = true
   notificationOpen.value = true
 }
 
@@ -123,7 +172,7 @@ function perform(action: () => void): boolean {
     action()
     return true
   } catch (error) {
-    notify(error instanceof Error ? error.message : 'Une erreur est survenue.', true)
+    notifyError(error)
     return false
   }
 }
@@ -198,9 +247,10 @@ function deleteTestCase(testCase: TestCase): void {
   const id = selectedChecklist.value?.id
   if (!id) return
   confirm({
-    title: 'Supprimer le cas de test ?',
-    message: `« ${testCase.title} » sera supprimé de cette checklist.`,
-    label: 'Supprimer',
+    titleKey: 'workspace.confirm.deleteTestCaseTitle',
+    messageKey: 'workspace.confirm.deleteTestCaseMessage',
+    labelKey: 'common.delete',
+    params: { title: testCase.title },
     destructive: true,
     action: () => store.deleteTestCase(id, testCase.id),
   })
@@ -210,9 +260,10 @@ function deleteChecklist(): void {
   const checklist = selectedChecklist.value
   if (!checklist) return
   confirm({
-    title: 'Supprimer la checklist ?',
-    message: `« ${checklist.title} » et ses ${checklist.testCases.length} cas de test seront supprimés.`,
-    label: 'Supprimer',
+    titleKey: 'workspace.confirm.deleteChecklistTitle',
+    messageKey: 'workspace.confirm.deleteChecklistMessage',
+    labelKey: 'common.delete',
+    params: { title: checklist.title, count: checklist.testCases.length },
     destructive: true,
     action: () => store.deleteChecklist(checklist.id),
   })
@@ -222,12 +273,12 @@ function resetChecklist(): void {
   const checklist = selectedChecklist.value
   if (!checklist) return
   confirm({
-    title: 'Réinitialiser les résultats ?',
-    message: 'Tous les cas de cette checklist repasseront à « Non exécuté ».',
-    label: 'Réinitialiser',
+    titleKey: 'workspace.confirm.resetTitle',
+    messageKey: 'workspace.confirm.resetMessage',
+    labelKey: 'workspace.confirm.resetButton',
     action: () => {
       store.resetChecklist(checklist.id)
-      notify('Résultats réinitialisés.')
+      notify('workspace.resetDone')
     },
   })
 }
@@ -255,7 +306,7 @@ async function chooseImport(event: Event): Promise<void> {
     importMode.value = 'merge'
     importDialog.value = true
   } catch (error) {
-    notify(error instanceof Error ? error.message : 'Le fichier ne peut pas être lu.', true)
+    notifyError(error, 'workspace.importReadFailed')
   } finally {
     importing.value = false
   }
@@ -265,7 +316,7 @@ function applyImport(): void {
   if (
     perform(() => {
       store.importJson(importContents.value, importMode.value)
-      notify('Import terminé.')
+      notify('workspace.importDone')
     })
   ) {
     importDialog.value = false
@@ -277,10 +328,9 @@ function applyImport(): void {
 function importJson(): void {
   if (importMode.value === 'replace') {
     confirm({
-      title: 'Remplacer toutes les checklists ?',
-      message:
-        'Le fichier importé remplacera toutes les catégories, checklists et tous les résultats actuels.',
-      label: 'Remplacer',
+      titleKey: 'workspace.confirm.replaceTitle',
+      messageKey: 'workspace.confirm.replaceMessage',
+      labelKey: 'workspace.confirm.replaceButton',
       destructive: true,
       action: applyImport,
     })
@@ -289,10 +339,9 @@ function importJson(): void {
 
 function recoverStorage(): void {
   confirm({
-    title: 'Réactiver le cache du navigateur ?',
-    message:
-      'Le cache illisible du navigateur sera remplacé par l’espace actuellement affiché. Exportez la copie originale avant de continuer si vous souhaitez la conserver.',
-    label: 'Réactiver',
+    titleKey: 'workspace.confirm.recoverTitle',
+    messageKey: 'workspace.confirm.recoverMessage',
+    labelKey: 'workspace.confirm.recoverButton',
     action: () => store.recoverStorage(),
   })
 }
@@ -305,26 +354,26 @@ function recoverStorage(): void {
     :temporary="!mdAndUp"
     width="288"
     class="workspace-drawer"
-    aria-label="Catégories et checklists"
+    :aria-label="t('workspace.navigationLabel')"
   >
     <div class="brand px-5 py-5 d-flex align-center ga-3">
       <v-avatar color="primary" rounded="lg" size="38">
         <v-icon icon="mdi-check-all" size="24" />
       </v-avatar>
       <div>
-        <div class="font-weight-bold text-body-1">QA Checklist</div>
-        <div class="text-caption text-medium-emphasis">Espace de test local</div>
+        <div class="font-weight-bold text-body-1">{{ t('app.name') }}</div>
+        <div class="text-caption text-medium-emphasis">{{ t('workspace.localWorkspace') }}</div>
       </div>
     </div>
     <v-divider />
     <div class="d-flex align-center justify-space-between px-5 pt-5 pb-2">
-      <span class="text-overline text-medium-emphasis">Catégories</span>
+      <span class="text-overline text-medium-emphasis">{{ t('workspace.categories') }}</span>
       <v-btn
         icon="mdi-folder-plus-outline"
         variant="text"
         size="small"
-        aria-label="Ajouter une catégorie"
-        title="Ajouter une catégorie"
+        :aria-label="t('workspace.addCategory')"
+        :title="t('workspace.addCategory')"
         @click="openParentEditor()"
       />
     </div>
@@ -345,7 +394,7 @@ function recoverStorage(): void {
               size="18"
             />
             <v-icon icon="mdi-folder-outline" size="19" color="secondary" />
-            <span class="parent-name text-body-2 font-weight-medium">{{ parent.name }}</span>
+            <span class="parent-name text-body-2 font-weight-medium">{{ parent.displayName }}</span>
             <span class="text-caption text-medium-emphasis ml-auto">{{
               parent.checklists.length
             }}</span>
@@ -354,8 +403,8 @@ function recoverStorage(): void {
             icon="mdi-pencil-outline"
             variant="text"
             size="x-small"
-            :aria-label="`Renommer la catégorie ${parent.name}`"
-            :title="`Renommer ${parent.name}`"
+            :aria-label="t('workspace.renameCategory', { name: parent.displayName })"
+            :title="t('workspace.rename', { name: parent.displayName })"
             class="mr-1"
             @click="openParentEditor(parent)"
           />
@@ -374,7 +423,7 @@ function recoverStorage(): void {
             color="primary"
             rounded="lg"
             :title="checklist.title"
-            :aria-label="`Ouvrir la checklist ${checklist.title}`"
+            :aria-label="t('workspace.openChecklist', { title: checklist.title })"
             @click="selectChecklist(checklist.id)"
           >
             <template #prepend><v-icon icon="mdi-format-list-checks" size="19" /></template>
@@ -388,7 +437,7 @@ function recoverStorage(): void {
             v-if="!parent.checklists.length"
             class="text-caption text-medium-emphasis pl-10 py-2"
           >
-            Aucune checklist
+            {{ t('workspace.noChecklists') }}
           </div>
         </v-list>
       </section>
@@ -396,11 +445,11 @@ function recoverStorage(): void {
     <template #append>
       <div class="pa-4 border-t">
         <v-btn block color="primary" prepend-icon="mdi-plus" @click="openChecklistEditor()">
-          Créer une checklist
+          {{ t('workspace.createChecklist') }}
         </v-btn>
         <div class="text-caption text-medium-emphasis mt-3 text-center">
           <v-icon icon="mdi-harddisk" size="14" class="mr-1" />
-          Données sur cet appareil
+          {{ t('workspace.onDevice') }}
         </div>
       </div>
     </template>
@@ -409,10 +458,13 @@ function recoverStorage(): void {
   <v-app-bar flat border="b" height="68" class="px-sm-3">
     <v-app-bar-nav-icon
       v-if="!mdAndUp"
-      aria-label="Ouvrir le menu des checklists"
+      :aria-label="t('workspace.openMenu')"
       @click="drawerOpen = !drawerOpen"
     />
-    <v-app-bar-title class="text-body-1 font-weight-medium">Mes checklists</v-app-bar-title>
+    <v-app-bar-title v-if="!xs" class="text-body-1 font-weight-medium">{{
+      t('workspace.myChecklists')
+    }}</v-app-bar-title>
+    <v-spacer v-else />
     <div
       v-if="mdAndUp"
       class="text-caption mr-5 d-flex align-center ga-1"
@@ -426,25 +478,44 @@ function recoverStorage(): void {
       {{ persistenceLabel }}
     </div>
     <v-btn
+      v-if="xs"
+      icon="mdi-import"
+      variant="text"
+      :loading="importing"
+      :aria-label="t('workspace.importFile')"
+      @click="importInput?.click()"
+    />
+    <v-btn
+      v-else
       prepend-icon="mdi-import"
       variant="text"
       :loading="importing"
-      aria-label="Importer un fichier JSON"
+      :aria-label="t('workspace.importFile')"
       @click="importInput?.click()"
-      >Importer</v-btn
+      >{{ t('common.import') }}</v-btn
     >
     <v-menu>
       <template #activator="{ props }">
-        <v-btn v-bind="props" icon="mdi-dots-vertical" aria-label="Options de l’espace" />
+        <v-btn v-bind="props" icon="mdi-dots-vertical" :aria-label="t('workspace.options')" />
       </template>
       <v-list density="compact">
         <v-list-item
           prepend-icon="mdi-export"
-          title="Exporter tout en JSON"
+          :title="t('workspace.exportAll')"
           @click="exportWorkspace"
         />
       </v-list>
     </v-menu>
+    <v-select
+      v-model="selectedLanguage"
+      :items="languageOptions"
+      :label="t('language.label')"
+      :aria-label="t('language.label')"
+      density="compact"
+      variant="outlined"
+      hide-details
+      class="language-select ml-2 mr-3"
+    />
   </v-app-bar>
 
   <v-main>
@@ -468,14 +539,14 @@ function recoverStorage(): void {
         type="warning"
         variant="tonal"
         class="mb-6"
-        title="Cache du navigateur indisponible"
+        :title="t('workspace.cacheUnavailable')"
         role="alert"
       >
         {{ storageError }}
         <div class="d-flex flex-wrap ga-2 mt-3">
-          <v-btn size="small" variant="outlined" @click="exportWorkspace"
-            >Exporter les données affichées</v-btn
-          >
+          <v-btn size="small" variant="outlined" @click="exportWorkspace">{{
+            t('workspace.exportDisplayed')
+          }}</v-btn>
           <template v-if="recoveryRequired">
             <v-btn
               size="small"
@@ -483,24 +554,26 @@ function recoverStorage(): void {
               @click="
                 perform(() => downloadJson(store.exportRecovery(), 'qa-checklists-recuperation'))
               "
-              >Exporter la copie originale</v-btn
+              >{{ t('workspace.exportOriginal') }}</v-btn
             >
-            <v-btn size="small" variant="text" @click="recoverStorage"
-              >Réactiver la sauvegarde</v-btn
-            >
+            <v-btn size="small" variant="text" @click="recoverStorage">{{
+              t('workspace.reactivateBackup')
+            }}</v-btn>
           </template>
-          <v-btn v-else size="small" variant="text" @click="store.retrySave()"
-            >Réessayer la sauvegarde</v-btn
-          >
+          <v-btn v-else size="small" variant="text" @click="store.retrySave()">{{
+            t('workspace.retryBackup')
+          }}</v-btn>
         </div>
       </v-alert>
 
       <template v-if="selectedChecklist">
         <div class="d-flex align-center ga-2 text-body-2 text-medium-emphasis mb-3">
           <v-icon icon="mdi-folder-outline" size="18" />
-          <span class="text-break">{{ selectedParent?.name }}</span>
+          <span class="text-break">{{
+            selectedParent ? parentDisplayName(selectedParent) : ''
+          }}</span>
           <v-icon icon="mdi-chevron-right" size="16" />
-          <span>Checklist</span>
+          <span>{{ t('common.checklist') }}</span>
         </div>
         <header class="d-flex align-start justify-space-between ga-3 mb-5">
           <div class="min-width-0">
@@ -518,24 +591,24 @@ function recoverStorage(): void {
                 v-bind="props"
                 variant="text"
                 icon="mdi-dots-horizontal"
-                aria-label="Options de la checklist"
+                :aria-label="t('workspace.checklistOptions')"
               />
             </template>
             <v-list density="compact">
               <v-list-item
                 prepend-icon="mdi-pencil-outline"
-                title="Modifier la checklist"
+                :title="t('workspace.editChecklist')"
                 @click="openChecklistEditor(selectedChecklist)"
               />
               <v-list-item
                 prepend-icon="mdi-export"
-                title="Exporter cette checklist"
+                :title="t('workspace.exportChecklist')"
                 @click="exportChecklist"
               />
               <v-divider class="my-1" />
               <v-list-item
                 prepend-icon="mdi-delete-outline"
-                title="Supprimer la checklist"
+                :title="t('workspace.deleteChecklist')"
                 base-color="error"
                 @click="deleteChecklist"
               />
@@ -543,21 +616,24 @@ function recoverStorage(): void {
           </v-menu>
         </header>
 
-        <section aria-label="Progression des tests" class="mb-7">
+        <section :aria-label="t('workspace.progressLabel')" class="mb-7">
           <div class="d-flex align-center justify-space-between flex-wrap ga-3 mb-3">
-            <span class="text-body-2 font-weight-medium"
-              >{{ counts.passed + counts.failed }} / {{ counts.total }} exécutés</span
-            >
+            <span class="text-body-2 font-weight-medium">{{
+              t('workspace.progressCount', {
+                done: counts.passed + counts.failed,
+                total: counts.total,
+              })
+            }}</span>
             <div class="d-flex flex-wrap ga-2">
-              <v-chip size="small" color="success" variant="tonal" prepend-icon="mdi-check"
-                >{{ counts.passed }} réussi{{ counts.passed > 1 ? 's' : '' }}</v-chip
-              >
-              <v-chip size="small" color="error" variant="tonal" prepend-icon="mdi-close"
-                >{{ counts.failed }} échoué{{ counts.failed > 1 ? 's' : '' }}</v-chip
-              >
-              <v-chip size="small" variant="tonal" prepend-icon="mdi-circle-outline"
-                >{{ counts.notRun }} non exécuté{{ counts.notRun > 1 ? 's' : '' }}</v-chip
-              >
+              <v-chip size="small" color="success" variant="tonal" prepend-icon="mdi-check">{{
+                t('workspace.passedCount', { count: counts.passed })
+              }}</v-chip>
+              <v-chip size="small" color="error" variant="tonal" prepend-icon="mdi-close">{{
+                t('workspace.failedCount', { count: counts.failed })
+              }}</v-chip>
+              <v-chip size="small" variant="tonal" prepend-icon="mdi-circle-outline">{{
+                t('workspace.notRunCount', { count: counts.notRun })
+              }}</v-chip>
             </div>
           </div>
           <v-progress-linear
@@ -566,21 +642,21 @@ function recoverStorage(): void {
             bg-color="primary"
             height="5"
             rounded
-            aria-label="Progression de l’exécution"
+            :aria-label="t('workspace.executionProgress')"
           />
         </section>
 
         <section aria-labelledby="test-cases-heading">
           <div class="d-flex align-center justify-space-between flex-wrap ga-3 mb-4">
             <h2 id="test-cases-heading" class="text-subtitle-1 font-weight-bold">
-              Cas de test
+              {{ t('workspace.testCases') }}
               <span class="text-medium-emphasis font-weight-regular ml-1"
                 >({{ counts.total }})</span
               >
             </h2>
-            <v-btn color="primary" prepend-icon="mdi-plus" @click="openTestCaseEditor()"
-              >Ajouter un cas de test</v-btn
-            >
+            <v-btn color="primary" prepend-icon="mdi-plus" @click="openTestCaseEditor()">{{
+              t('workspace.addTestCase')
+            }}</v-btn>
           </div>
           <TestCaseTable
             :test-cases="selectedChecklist.testCases"
@@ -595,7 +671,7 @@ function recoverStorage(): void {
               prepend-icon="mdi-restart"
               :disabled="counts.passed + counts.failed === 0"
               @click="resetChecklist"
-              >Réinitialiser les résultats</v-btn
+              >{{ t('workspace.resetResults') }}</v-btn
             >
           </div>
         </section>
@@ -606,15 +682,19 @@ function recoverStorage(): void {
         class="empty-workspace d-flex flex-column align-center justify-center text-center"
       >
         <v-icon icon="mdi-clipboard-text-outline" size="60" color="primary" class="mb-5" />
-        <h1 class="text-h5 font-weight-bold mb-3">Aucune checklist sélectionnée</h1>
+        <h1 class="text-h5 font-weight-bold mb-3">{{ t('workspace.emptyTitle') }}</h1>
         <p class="text-body-1 text-medium-emphasis mb-6">
-          Créez une checklist pour préparer et suivre vos tests.
+          {{ t('workspace.emptyDescription') }}
         </p>
-        <v-btn color="primary" prepend-icon="mdi-plus" @click="openChecklistEditor()"
-          >Créer une checklist</v-btn
-        >
-        <v-btn class="mt-3" variant="text" prepend-icon="mdi-import" @click="importInput?.click()"
-          >Importer un fichier JSON</v-btn
+        <v-btn color="primary" prepend-icon="mdi-plus" @click="openChecklistEditor()">{{
+          t('workspace.createChecklist')
+        }}</v-btn>
+        <v-btn
+          class="mt-3"
+          variant="text"
+          prepend-icon="mdi-import"
+          @click="importInput?.click()"
+          >{{ t('workspace.importFile') }}</v-btn
         >
       </section>
     </v-container>
@@ -622,7 +702,7 @@ function recoverStorage(): void {
 
   <ChecklistEditorDialog
     v-model="checklistDialog"
-    :parents="parents"
+    :parents="parentOptions"
     :checklist="editingChecklist"
     :default-parent-id="selectedChecklist?.parentId"
     @save="saveChecklist"
@@ -644,43 +724,44 @@ function recoverStorage(): void {
     type="file"
     accept=".json,application/json"
     hidden
-    aria-label="Fichier JSON à importer"
+    :aria-label="t('workspace.importFileLabel')"
     @change="chooseImport"
   />
   <v-dialog v-model="importDialog" max-width="520">
-    <v-card title="Importer des checklists">
+    <v-card :title="t('workspace.importTitle')">
       <v-card-text>
         <div class="text-body-2 text-break mb-4">
           <v-icon icon="mdi-code-json" class="mr-2" />{{ importFilename }}
         </div>
         <v-radio-group v-model="importMode" hide-details>
-          <v-radio label="Ajouter aux checklists existantes" value="merge" />
-          <v-radio label="Remplacer toutes les données" value="replace" />
+          <v-radio :label="t('workspace.mergeImport')" value="merge" />
+          <v-radio :label="t('workspace.replaceImport')" value="replace" />
         </v-radio-group>
         <p class="text-body-2 text-medium-emphasis mt-3">
-          L’ajout crée une nouvelle copie de chaque checklist et conserve les catégories de même
-          nom.
+          {{ t('workspace.importAdvice') }}
         </p>
       </v-card-text>
       <v-card-actions class="px-6 pb-5">
         <v-spacer />
-        <v-btn @click="importDialog = false">Annuler</v-btn>
-        <v-btn color="primary" variant="flat" @click="importJson">Importer</v-btn>
+        <v-btn @click="importDialog = false">{{ t('common.cancel') }}</v-btn>
+        <v-btn color="primary" variant="flat" @click="importJson">{{ t('common.import') }}</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
 
   <v-dialog v-model="confirmationOpen" max-width="480">
-    <v-card v-if="confirmation" :title="confirmation.title">
-      <v-card-text class="text-body-2 text-pre-wrap">{{ confirmation.message }}</v-card-text>
+    <v-card v-if="confirmation" :title="t(confirmation.titleKey)">
+      <v-card-text class="text-body-2 text-pre-wrap">{{
+        t(confirmation.messageKey, confirmation.params ?? {})
+      }}</v-card-text>
       <v-card-actions class="px-6 pb-5">
         <v-spacer />
-        <v-btn @click="confirmationOpen = false">Annuler</v-btn>
+        <v-btn @click="confirmationOpen = false">{{ t('common.cancel') }}</v-btn>
         <v-btn
           :color="confirmation.destructive ? 'error' : 'primary'"
           variant="flat"
           @click="executeConfirmation"
-          >{{ confirmation.label }}</v-btn
+          >{{ t(confirmation.labelKey) }}</v-btn
         >
       </v-card-actions>
     </v-card>
@@ -691,10 +772,13 @@ function recoverStorage(): void {
     :color="notificationError ? 'error' : 'success'"
     :timeout="notificationError ? 7000 : 3500"
   >
-    {{ notification }}
+    {{ notificationMessage }}
     <template #actions
-      ><v-btn variant="text" aria-label="Fermer le message" @click="notificationOpen = false"
-        >Fermer</v-btn
+      ><v-btn
+        variant="text"
+        :aria-label="t('workspace.closeMessage')"
+        @click="notificationOpen = false"
+        >{{ t('common.close') }}</v-btn
       ></template
     >
   </v-snackbar>
@@ -706,6 +790,16 @@ function recoverStorage(): void {
   display: flex;
   flex-direction: column;
   min-height: calc(100dvh - 68px);
+}
+.language-select {
+  flex: 0 0 148px;
+  max-width: 148px;
+}
+@media (max-width: 599px) {
+  .language-select {
+    flex-basis: 128px;
+    max-width: 128px;
+  }
 }
 .brand {
   min-height: 83px;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { VForm } from 'vuetify/components'
 import type { TestCase } from '@/models/checklists/TestCase'
 import type { TestCaseDraft } from '@/models/checklists/TestCaseDraft'
@@ -16,6 +17,7 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), { testCase: null })
 const emit = defineEmits<Emits>()
+const { t, locale } = useI18n()
 const form = ref<InstanceType<typeof VForm> | null>(null)
 const title = ref('')
 const description = ref('')
@@ -23,10 +25,12 @@ const expectedResultsText = ref('')
 const saving = ref(false)
 const isEditing = computed(() => Boolean(props.testCase))
 const TITLE_RULES = [
-  (value: string) => Boolean(value.trim()) || 'Le titre est obligatoire.',
-  (value: string) => value.trim().length <= 160 || '160 caractères maximum.',
+  (value: string) => Boolean(value.trim()) || t('components.testCaseEditor.titleRequired'),
+  (value: string) => value.trim().length <= 160 || t('components.testCaseEditor.titleTooLong'),
 ]
-const DESCRIPTION_RULES = [(value: string) => value.length <= 4000 || '4 000 caractères maximum.']
+const DESCRIPTION_RULES = [
+  (value: string) => value.length <= 4000 || t('components.testCaseEditor.descriptionTooLong'),
+]
 
 function parseExpectedResults(value: string): string[] {
   return value
@@ -37,11 +41,12 @@ function parseExpectedResults(value: string): string[] {
 
 const EXPECTED_RESULTS_RULES = [
   (value: string) =>
-    parseExpectedResults(value).length > 0 || 'Ajoutez au moins un résultat attendu.',
-  (value: string) => parseExpectedResults(value).length <= 50 || '50 résultats attendus maximum.',
+    parseExpectedResults(value).length > 0 || t('components.testCaseEditor.expectedRequired'),
+  (value: string) =>
+    parseExpectedResults(value).length <= 50 || t('components.testCaseEditor.tooManyResults'),
   (value: string) =>
     parseExpectedResults(value).every((line) => line.length <= 1000) ||
-    '1 000 caractères maximum par résultat attendu.',
+    t('components.testCaseEditor.resultTooLong'),
 ]
 
 watch(
@@ -56,6 +61,13 @@ watch(
   },
   { immediate: true },
 )
+
+watch(locale, async () => {
+  if (props.modelValue && form.value?.isValid === false) {
+    await nextTick()
+    await form.value?.validate()
+  }
+})
 
 async function submit(): Promise<void> {
   if (saving.value) return
@@ -89,36 +101,42 @@ async function submit(): Promise<void> {
     <v-card rounded="lg">
       <v-form ref="form" class="dialog-form" validate-on="submit" @submit.prevent="submit">
         <v-card-title id="test-case-dialog-title" class="pt-6 px-6">
-          {{ isEditing ? 'Modifier le cas de test' : 'Nouveau cas de test' }}
+          {{
+            t(
+              isEditing
+                ? 'components.testCaseEditor.editTitle'
+                : 'components.testCaseEditor.newTitle',
+            )
+          }}
         </v-card-title>
         <v-card-text class="px-6 pt-4 pb-0">
           <v-text-field
             v-model="title"
-            label="Titre du cas de test"
+            :label="t('components.testCaseEditor.titleLabel')"
             :rules="TITLE_RULES"
             maxlength="160"
             autofocus
           />
           <v-textarea
             v-model="description"
-            label="Description"
+            :label="t('components.testCaseEditor.descriptionLabel')"
             :rules="DESCRIPTION_RULES"
             maxlength="4000"
             rows="3"
           />
           <v-textarea
             v-model="expectedResultsText"
-            label="Résultats attendus (un par ligne)"
+            :label="t('components.testCaseEditor.expectedResultsLabel')"
             :rules="EXPECTED_RESULTS_RULES"
             rows="5"
           />
         </v-card-text>
         <v-card-actions class="px-6 pb-5 flex-wrap justify-end ga-2">
           <v-btn class="ma-0" :disabled="saving" @click="emit('update:modelValue', false)">
-            Annuler
+            {{ t('common.cancel') }}
           </v-btn>
           <v-btn class="ma-0" type="submit" color="primary" variant="flat" :loading="saving">
-            {{ isEditing ? 'Enregistrer' : 'Ajouter le cas' }}
+            {{ t(isEditing ? 'common.save' : 'components.testCaseEditor.addButton') }}
           </v-btn>
         </v-card-actions>
       </v-form>

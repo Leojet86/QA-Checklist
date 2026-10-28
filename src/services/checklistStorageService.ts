@@ -1,5 +1,6 @@
 import type { ChecklistDocument } from '@/models/checklists/ChecklistDocument'
 import type { ChecklistStorageSnapshot } from '@/models/checklists/ChecklistStorageSnapshot'
+import { LocalizedError, localizeError } from '@/i18n'
 import {
   MAX_CHECKLIST_JSON_BYTES,
   parseChecklistDocument,
@@ -20,10 +21,11 @@ export function loadChecklistStorage(): ChecklistStorageSnapshot {
       originalJson: null,
     }
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : 'Le stockage local est inaccessible.'
     return {
       document: null,
-      error: `La sauvegarde locale ne peut pas être chargée. ${detail} La sauvegarde automatique est suspendue pour préserver les données existantes.`,
+      error: new LocalizedError('errors.storage.loadFailed', () => ({
+        detail: localizeError(error, 'errors.storage.unavailable'),
+      })),
       recoveryRequired: true,
       originalJson,
     }
@@ -33,16 +35,12 @@ export function loadChecklistStorage(): ChecklistStorageSnapshot {
 export function saveChecklistStorage(document: ChecklistDocument): void {
   const json = serializeChecklistDocument(document)
   if (new TextEncoder().encode(json).byteLength > MAX_CHECKLIST_JSON_BYTES) {
-    throw new Error(
-      'La sauvegarde dépasse la limite de 5 Mo. Les changements restent dans cette page et la dernière sauvegarde est conservée. Exportez vos checklists séparément avant de fermer la page.',
-    )
+    throw new LocalizedError('errors.storage.saveTooLarge')
   }
   try {
     localStorage.setItem(CHECKLIST_STORAGE_KEY, json)
   } catch {
-    throw new Error(
-      'La sauvegarde locale a échoué (stockage plein ou inaccessible). Vos changements restent dans cette page : exportez un fichier JSON avant de la fermer.',
-    )
+    throw new LocalizedError('errors.storage.saveFailed')
   }
 }
 

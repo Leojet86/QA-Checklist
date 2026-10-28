@@ -1,6 +1,7 @@
 import type { ChecklistDirectoryHandle } from '@/models/storage/ChecklistDirectoryHandle'
 import type { ChecklistFolderSnapshot } from '@/models/storage/ChecklistFolderSnapshot'
 import type { ChecklistWritableFile } from '@/models/storage/ChecklistWritableFile'
+import { LocalizedError } from '@/i18n'
 import {
   MAX_CHECKLIST_JSON_BYTES,
   parseChecklistDocument,
@@ -32,9 +33,7 @@ export function pickChecklistFolder(): Promise<ChecklistDirectoryHandle> {
       ? undefined
       : (window as DirectoryPickerWindow).showDirectoryPicker
   if (!picker || !isChecklistFolderSupported()) {
-    return Promise.reject(
-      new Error('La sauvegarde dans un dossier nécessite Chrome ou Edge sur cet appareil.'),
-    )
+    return Promise.reject(new LocalizedError('errors.folder.unsupportedBrowser'))
   }
   // Invoke before any await: native pickers require the original button gesture.
   return picker.call(window, {
@@ -68,7 +67,7 @@ export async function readChecklistFolder(
   }
   const file = await fileHandle.getFile()
   if (file.size > MAX_CHECKLIST_JSON_BYTES) {
-    throw new Error('Le fichier checklists.json dépasse 5 Mo. Il est conservé sans modification.')
+    throw new LocalizedError('errors.folder.fileTooLarge')
   }
   const json = await file.text()
   const document = parseChecklistDocument(json)
@@ -111,12 +110,9 @@ export function createChecklistFolderService() {
 
   async function writeOnce(json: string, operationGeneration: number): Promise<void> {
     if (!directory || generation !== operationGeneration) {
-      throw new Error('Le dossier de sauvegarde a changé. Reconnectez-le avant de continuer.')
+      throw new LocalizedError('errors.folder.changed')
     }
-    if (blocked)
-      throw new Error(
-        'La sauvegarde du fichier est suspendue. Réessayez ou reconnectez le dossier.',
-      )
+    if (blocked) throw new LocalizedError('errors.folder.suspended')
     parseChecklistDocument(json)
     const targetDirectory = directory
     let writer: ChecklistWritableFile | null = null
@@ -130,12 +126,10 @@ export function createChecklistFolderService() {
       // between this check and close(). A file is unchanged until close succeeds.
       const currentJson = await (await fileHandle.getFile()).text()
       if (currentJson !== (baseline ?? '')) {
-        throw new Error(
-          'Le fichier a été modifié ailleurs. Reconnectez le dossier pour charger ou fusionner les versions; aucune donnée du fichier n’a été écrasée.',
-        )
+        throw new LocalizedError('errors.folder.externalChange')
       }
       if (generation !== operationGeneration) {
-        throw new Error('La connexion au dossier a été annulée.')
+        throw new LocalizedError('errors.folder.cancelled')
       }
       if (currentJson === json) {
         await writer.abort()
@@ -153,7 +147,7 @@ export function createChecklistFolderService() {
       }
       await writer.write(json)
       if (generation !== operationGeneration) {
-        throw new Error('La connexion au dossier a été annulée.')
+        throw new LocalizedError('errors.folder.cancelled')
       }
       await writer.close()
       writer = null

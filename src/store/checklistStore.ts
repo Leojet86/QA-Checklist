@@ -1,5 +1,6 @@
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
+import { LocalizedError, localizeError, translate } from '@/i18n'
 import type { Checklist } from '@/models/checklists/Checklist'
 import type { ChecklistDetails } from '@/models/checklists/ChecklistDetails'
 import type { ChecklistDocument } from '@/models/checklists/ChecklistDocument'
@@ -52,16 +53,21 @@ function normalizeName(value: string): string {
     .toLocaleLowerCase('fr-CA')
 }
 
-function requireText(value: string, label: string): string {
+function requireText(value: string, labelKey: string): string {
   const text = value.trim()
-  if (!text) throw new Error(`${label} est obligatoire.`)
+  if (!text) {
+    throw new LocalizedError('data.required', () => ({ label: translate(labelKey) }))
+  }
   return text
 }
 
 export const useChecklistStore = defineStore('checklists', () => {
   const snapshot = loadChecklistStorage()
   const document = ref<ChecklistDocument>(snapshot.document ?? createDefaultDocument())
-  const storageError = ref<string | null>(snapshot.error)
+  const storageFailure = shallowRef<Error | null>(snapshot.error)
+  const storageError = computed(() =>
+    storageFailure.value === null ? null : localizeError(storageFailure.value, 'data.saveFailed'),
+  )
   const recoveryRequired = ref(snapshot.recoveryRequired)
   let originalJson = snapshot.originalJson
   const initialSelection = loadChecklistSelection()
@@ -80,11 +86,17 @@ export const useChecklistStore = defineStore('checklists', () => {
   const diskState = ref<DiskBackupState>(
     isChecklistFolderSupported() ? 'disconnected' : 'unsupported',
   )
-  const diskError = ref<string | null>(null)
+  const diskFailure = shallowRef<Error | null>(null)
+  const diskError = computed(() =>
+    diskFailure.value === null ? null : localizeError(diskFailure.value, 'data.folderSaveFailed'),
+  )
   const diskDirectoryName = ref<string | null>(null)
   const diskLastSavedAt = ref<string | null>(null)
   const diskPending = ref(false)
-  const diskMetadataError = ref<string | null>(null)
+  const diskMetadataMessageKey = ref<string | null>(null)
+  const diskMetadataError = computed(() =>
+    diskMetadataMessageKey.value ? translate(diskMetadataMessageKey.value) : null,
+  )
   const folderService = createChecklistFolderService()
   // Native handles stay outside reactive state: browser methods require their
   // original receiver, and Vue proxies cannot be structured-cloned by IndexedDB.
@@ -101,10 +113,10 @@ export const useChecklistStore = defineStore('checklists', () => {
     if (recoveryRequired.value) return false
     try {
       saveChecklistStorage(document.value)
-      storageError.value = null
+      storageFailure.value = null
       return true
     } catch (error: unknown) {
-      storageError.value = error instanceof Error ? error.message : 'La sauvegarde a échoué.'
+      storageFailure.value = error instanceof Error ? error : new LocalizedError('data.saveFailed')
       return false
     }
   }
@@ -115,12 +127,8 @@ export const useChecklistStore = defineStore('checklists', () => {
     return saved
   }
 
-  function describeError(error: unknown): string {
-    return error instanceof Error ? error.message : 'La sauvegarde dans le dossier a échoué.'
-  }
-
   function showDiskError(error: unknown): void {
-    diskError.value = describeError(error)
+    diskFailure.value = error instanceof Error ? error : new LocalizedError('data.folderSaveFailed')
     diskState.value =
       error instanceof DOMException && error.name === 'NotAllowedError'
         ? 'permissionRequired'
@@ -131,10 +139,9 @@ export const useChecklistStore = defineStore('checklists', () => {
   async function rememberDiskDirectory(directory: ChecklistDirectoryHandle): Promise<void> {
     try {
       await saveChecklistFolderHandle(directory)
-      diskMetadataError.value = null
+      diskMetadataMessageKey.value = null
     } catch {
-      diskMetadataError.value =
-        'Le dossier fonctionne pour cette session, mais sa connexion ne peut pas être mémorisée. Sélectionnez-le à nouveau au prochain démarrage.'
+      diskMetadataMessageKey.value = 'data.metadataNotRemembered'
     }
   }
 
@@ -147,7 +154,7 @@ export const useChecklistStore = defineStore('checklists', () => {
         await folderService.write(json)
         if (generation !== diskGeneration) return
         diskLastSavedAt.value = new Date().toISOString()
-        diskError.value = null
+        diskFailure.value = null
       } catch (error) {
         if (generation !== diskGeneration) return
         pendingDiskJson ??= json
@@ -211,7 +218,7 @@ export const useChecklistStore = defineStore('checklists', () => {
     diskDirectory = snapshot.directory
     diskDirectoryName.value = snapshot.directory.name
     diskLastSavedAt.value = snapshot.modifiedAt
-    diskError.value = null
+    diskFailure.value = null
     if (snapshot.document && hasMeaningfulWorkspace() && diskJson !== currentJson) {
       reviewSnapshot = snapshot
       diskState.value = 'review'
@@ -242,8 +249,7 @@ export const useChecklistStore = defineStore('checklists', () => {
         directory = await loadChecklistFolderHandle()
       } catch {
         if (token !== connectionToken) return
-        diskMetadataError.value =
-          'La connexion au dossier ne peut pas être relue. Sélectionnez votre dossier QAChecklist pour le reconnecter.'
+        diskMetadataMessageKey.value = 'data.metadataNotLoaded'
         diskState.value = 'disconnected'
         return
       }
@@ -334,13 +340,13 @@ export const useChecklistStore = defineStore('checklists', () => {
     diskState.value = 'loading'
     try {
       const saved = await readChecklistFolder(reviewSnapshot.directory)
-      if (!saved.document) throw new Error('Le fichier a été supprimé. Reconnectez le dossier.')
+      if (!saved.document) throw new LocalizedError('data.fileRemoved')
       if (mode === 'load') loadDiskDocument(saved)
       else importJson(serializeChecklistDocument(saved.document), 'merge')
       reviewSnapshot = null
       folderService.attach(saved)
       diskAttached = true
-      diskError.value = null
+      diskFailure.value = null
       diskLastSavedAt.value = saved.modifiedAt
       diskState.value = 'ready'
       diskPending.value = false
@@ -363,7 +369,7 @@ export const useChecklistStore = defineStore('checklists', () => {
     diskState.value = isChecklistFolderSupported() ? 'disconnected' : 'unsupported'
     diskDirectoryName.value = null
     diskLastSavedAt.value = null
-    diskError.value = null
+    diskFailure.value = null
     diskPending.value = false
   }
 
@@ -380,7 +386,7 @@ export const useChecklistStore = defineStore('checklists', () => {
         return
       }
       folderService.allowRetry()
-      diskError.value = null
+      diskFailure.value = null
       diskState.value = 'ready'
       scheduleDiskSave()
       await flushDiskBackup()
@@ -391,17 +397,17 @@ export const useChecklistStore = defineStore('checklists', () => {
 
   function findChecklist(checklistId: string): Checklist {
     const checklist = document.value.checklists.find((item) => item.id === checklistId)
-    if (!checklist) throw new Error('Cette checklist est introuvable.')
+    if (!checklist) throw new LocalizedError('data.checklistNotFound')
     return checklist
   }
 
   function validateDetails(details: ChecklistDetails): ChecklistDetails {
     if (!document.value.parents.some((parent) => parent.id === details.parentId)) {
-      throw new Error('Sélectionnez un parent existant.')
+      throw new LocalizedError('data.parentRequired')
     }
     return {
       parentId: details.parentId,
-      title: requireText(details.title, 'Le titre'),
+      title: requireText(details.title, 'data.fields.title'),
       description: details.description.trim(),
     }
   }
@@ -413,11 +419,11 @@ export const useChecklistStore = defineStore('checklists', () => {
   }
 
   function createParent(name: string): string {
-    const trimmedName = requireText(name, 'Le nom du parent')
+    const trimmedName = requireText(name, 'errors.fields.parentName')
     if (
       document.value.parents.some((parent) => normalizeName(parent.name) === normalizeName(name))
     ) {
-      throw new Error('Un parent porte déjà ce nom.')
+      throw new LocalizedError('data.duplicateParent')
     }
     const id = crypto.randomUUID()
     document.value.parents.push({ id, name: trimmedName })
@@ -427,14 +433,14 @@ export const useChecklistStore = defineStore('checklists', () => {
 
   function renameParent(parentId: string, name: string): void {
     const parent = document.value.parents.find((item) => item.id === parentId)
-    if (!parent) throw new Error('Ce parent est introuvable.')
-    const trimmedName = requireText(name, 'Le nom du parent')
+    if (!parent) throw new LocalizedError('data.parentNotFound')
+    const trimmedName = requireText(name, 'errors.fields.parentName')
     if (
       document.value.parents.some(
         (item) => item.id !== parentId && normalizeName(item.name) === normalizeName(name),
       )
     ) {
-      throw new Error('Un parent porte déjà ce nom.')
+      throw new LocalizedError('data.duplicateParent')
     }
     parent.name = trimmedName
     save()
@@ -473,13 +479,13 @@ export const useChecklistStore = defineStore('checklists', () => {
 
   function upsertTestCase(checklistId: string, draft: TestCaseDraft): void {
     const checklist = findChecklist(checklistId)
-    const title = requireText(draft.title, 'Le titre du cas de test')
+    const title = requireText(draft.title, 'errors.fields.testCaseTitle')
     const expectedResults = draft.expectedResults.map((result) => result.trim()).filter(Boolean)
-    if (!expectedResults.length) throw new Error('Ajoutez au moins un résultat attendu.')
+    if (!expectedResults.length) throw new LocalizedError('data.expectedResultRequired')
     const fields = { title, description: draft.description.trim(), expectedResults }
     if (draft.id) {
       const testCase = checklist.testCases.find((item) => item.id === draft.id)
-      if (!testCase) throw new Error('Ce cas de test est introuvable.')
+      if (!testCase) throw new LocalizedError('data.testCaseNotFound')
       Object.assign(testCase, fields)
     } else {
       checklist.testCases.push({ id: crypto.randomUUID(), ...fields, status: 'notRun' })
@@ -491,7 +497,7 @@ export const useChecklistStore = defineStore('checklists', () => {
   function deleteTestCase(checklistId: string, testCaseId: string): void {
     const checklist = findChecklist(checklistId)
     if (!checklist.testCases.some((testCase) => testCase.id === testCaseId)) {
-      throw new Error('Ce cas de test est introuvable.')
+      throw new LocalizedError('data.testCaseNotFound')
     }
     checklist.testCases = checklist.testCases.filter((testCase) => testCase.id !== testCaseId)
     checklist.updatedAt = new Date().toISOString()
@@ -505,7 +511,7 @@ export const useChecklistStore = defineStore('checklists', () => {
   ): void {
     const checklist = findChecklist(checklistId)
     const testCase = checklist.testCases.find((item) => item.id === testCaseId)
-    if (!testCase) throw new Error('Ce cas de test est introuvable.')
+    if (!testCase) throw new LocalizedError('data.testCaseNotFound')
     testCase.status = status
     checklist.updatedAt = new Date().toISOString()
     save()
@@ -538,7 +544,7 @@ export const useChecklistStore = defineStore('checklists', () => {
       }
       const importedChecklists = imported.checklists.map((checklist): Checklist => {
         const parentId = parentIds.get(checklist.parentId)
-        if (!parentId) throw new Error('Le parent de la checklist est introuvable.')
+        if (!parentId) throw new LocalizedError('data.checklistParentNotFound')
         return {
           ...checklist,
           id: crypto.randomUUID(),
@@ -564,7 +570,7 @@ export const useChecklistStore = defineStore('checklists', () => {
   }
 
   function exportRecovery(): string {
-    if (originalJson === null) throw new Error('Aucune sauvegarde locale lisible à exporter.')
+    if (originalJson === null) throw new LocalizedError('data.noRecovery')
     return originalJson
   }
 
@@ -573,9 +579,9 @@ export const useChecklistStore = defineStore('checklists', () => {
       saveChecklistStorage(document.value)
       recoveryRequired.value = false
       originalJson = null
-      storageError.value = null
+      storageFailure.value = null
     } catch (error: unknown) {
-      storageError.value = error instanceof Error ? error.message : 'La sauvegarde a échoué.'
+      storageFailure.value = error instanceof Error ? error : new LocalizedError('data.saveFailed')
     }
   }
 

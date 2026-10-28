@@ -1,4 +1,5 @@
 import type { ChecklistDirectoryHandle } from '@/models/storage/ChecklistDirectoryHandle'
+import { LocalizedError } from '@/i18n'
 
 const HANDLE_DATABASE_NAME = 'qa-checklist-file-access'
 const HANDLE_STORE_NAME = 'directory-handles'
@@ -7,7 +8,7 @@ const HANDLE_KEY = 'checklist-directory'
 function openHandleDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
-      reject(new Error('Ce navigateur ne peut pas mémoriser le dossier de sauvegarde.'))
+      reject(new LocalizedError('errors.handle.unavailable'))
       return
     }
     const request = indexedDB.open(HANDLE_DATABASE_NAME, 1)
@@ -15,10 +16,8 @@ function openHandleDatabase(): Promise<IDBDatabase> {
       request.result.createObjectStore(HANDLE_STORE_NAME)
     }
     request.onsuccess = () => resolve(request.result)
-    request.onerror = () =>
-      reject(request.error ?? new Error('Le dossier ne peut pas être mémorisé.'))
-    request.onblocked = () =>
-      reject(new Error('La mémorisation du dossier est bloquée par un autre onglet.'))
+    request.onerror = () => reject(request.error ?? new LocalizedError('errors.handle.saveFailed'))
+    request.onblocked = () => reject(new LocalizedError('errors.handle.blocked'))
   })
 }
 
@@ -45,9 +44,9 @@ export async function loadChecklistFolderHandle(): Promise<ChecklistDirectoryHan
       }
       transaction.oncomplete = () => resolve(handle)
       transaction.onerror = () =>
-        reject(transaction.error ?? new Error('Le dossier mémorisé est inaccessible.'))
+        reject(transaction.error ?? new LocalizedError('errors.handle.readFailed'))
       transaction.onabort = () =>
-        reject(transaction.error ?? new Error('La lecture du dossier a été annulée.'))
+        reject(transaction.error ?? new LocalizedError('errors.handle.readCancelled'))
     })
   } finally {
     database.close()
@@ -62,9 +61,9 @@ export async function saveChecklistFolderHandle(handle: ChecklistDirectoryHandle
       transaction.objectStore(HANDLE_STORE_NAME).put(handle, HANDLE_KEY)
       transaction.oncomplete = () => resolve()
       transaction.onerror = () =>
-        reject(transaction.error ?? new Error('Le dossier ne peut pas être mémorisé.'))
+        reject(transaction.error ?? new LocalizedError('errors.handle.saveFailed'))
       transaction.onabort = () =>
-        reject(transaction.error ?? new Error('La mémorisation du dossier a été annulée.'))
+        reject(transaction.error ?? new LocalizedError('errors.handle.saveCancelled'))
     })
   } finally {
     database.close()

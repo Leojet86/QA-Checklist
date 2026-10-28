@@ -37,6 +37,12 @@ These rules are the top-priority repository instructions for agents working in `
 - Never overwrite an existing unreadable file or silently replace different disk and browser data. Read and validate the disk file before enabling writes, and require an explicit load or merge decision when needed.
 - Display file-write progress and failures accurately. Clearing browser data must not delete external JSON files; reconnecting the folder must allow the user to recover them.
 
+## Localization
+
+- Keep all application UI text, accessible labels, validation messages, and application errors in `src/locales/en.json` and `src/locales/fr.json`, with matching translation keys. Use Vue I18n instead of inline language-specific text.
+- Keep language selection in the top-right selector, persist the preference locally, and synchronize Vuetify labels, date/time formatting, and the document language.
+- Never translate or rewrite user-authored categories, checklist titles, descriptions, expected results, or saved JSON data when switching languages.
+
 ## Core principles
 
 - Follow SOLID and clean code principles.

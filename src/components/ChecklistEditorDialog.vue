@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { VForm } from 'vuetify/components'
 import type { Checklist } from '@/models/checklists/Checklist'
 import type { ChecklistDetails } from '@/models/checklists/ChecklistDetails'
@@ -22,6 +23,7 @@ const props = withDefaults(defineProps<Props>(), {
   defaultParentId: null,
 })
 const emit = defineEmits<Emits>()
+const { t, locale } = useI18n()
 const form = ref<InstanceType<typeof VForm> | null>(null)
 const title = ref('')
 const parentId = ref<string | null>(null)
@@ -29,11 +31,15 @@ const description = ref('')
 const saving = ref(false)
 const isEditing = computed(() => Boolean(props.checklist))
 const TITLE_RULES = [
-  (value: string) => Boolean(value.trim()) || 'Le titre est obligatoire.',
-  (value: string) => value.trim().length <= 120 || '120 caractères maximum.',
+  (value: string) => Boolean(value.trim()) || t('components.checklistEditor.titleRequired'),
+  (value: string) => value.trim().length <= 120 || t('components.checklistEditor.titleTooLong'),
 ]
-const PARENT_RULES = [(value: string | null) => Boolean(value) || 'Le parent est obligatoire.']
-const DESCRIPTION_RULES = [(value: string) => value.length <= 2000 || '2 000 caractères maximum.']
+const PARENT_RULES = [
+  (value: string | null) => Boolean(value) || t('components.checklistEditor.parentRequired'),
+]
+const DESCRIPTION_RULES = [
+  (value: string) => value.length <= 2000 || t('components.checklistEditor.descriptionTooLong'),
+]
 
 watch(
   () => props.modelValue,
@@ -47,6 +53,13 @@ watch(
   },
   { immediate: true },
 )
+
+watch(locale, async () => {
+  if (props.modelValue && form.value?.isValid === false) {
+    await nextTick()
+    await form.value?.validate()
+  }
+})
 
 async function submit(): Promise<void> {
   if (saving.value) return
@@ -77,12 +90,18 @@ async function submit(): Promise<void> {
     <v-card rounded="lg">
       <v-form ref="form" validate-on="submit" @submit.prevent="submit">
         <v-card-title id="checklist-dialog-title" class="pt-6 px-6">
-          {{ isEditing ? 'Modifier la checklist' : 'Nouvelle checklist' }}
+          {{
+            t(
+              isEditing
+                ? 'components.checklistEditor.editTitle'
+                : 'components.checklistEditor.newTitle',
+            )
+          }}
         </v-card-title>
         <v-card-text class="px-6 pt-4 pb-0">
           <v-text-field
             v-model="title"
-            label="Titre de la checklist"
+            :label="t('components.checklistEditor.titleLabel')"
             :rules="TITLE_RULES"
             maxlength="120"
             autofocus
@@ -92,13 +111,13 @@ async function submit(): Promise<void> {
             :items="parents"
             item-title="name"
             item-value="id"
-            label="Parent"
+            :label="t('components.checklistEditor.parentLabel')"
             :rules="PARENT_RULES"
             clearable
           />
           <v-textarea
             v-model="description"
-            label="Description (facultatif)"
+            :label="t('components.checklistEditor.descriptionLabel')"
             :rules="DESCRIPTION_RULES"
             maxlength="2000"
             rows="3"
@@ -106,10 +125,10 @@ async function submit(): Promise<void> {
         </v-card-text>
         <v-card-actions class="px-6 pb-5 flex-wrap justify-end ga-2">
           <v-btn class="ma-0" :disabled="saving" @click="emit('update:modelValue', false)">
-            Annuler
+            {{ t('common.cancel') }}
           </v-btn>
           <v-btn class="ma-0" type="submit" color="primary" variant="flat" :loading="saving">
-            {{ isEditing ? 'Enregistrer' : 'Créer la checklist' }}
+            {{ t(isEditing ? 'common.save' : 'components.checklistEditor.createButton') }}
           </v-btn>
         </v-card-actions>
       </v-form>
