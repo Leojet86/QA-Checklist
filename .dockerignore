@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+node_modules
+dist
+coverage
+test-results
+playwright-report
+blob-report
+.vscode
+.idea
+*.log
+*.tsbuildinfo
+docs
+AGENTS.md
+README.md

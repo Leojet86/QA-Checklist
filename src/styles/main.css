@@ -1,0 +1,39 @@
+:root {
+  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  overflow-y: auto;
+}
+
+body {
+  min-width: 320px;
+}
+
+.v-application {
+  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+.v-field__input,
+.v-list-item-title,
+.v-card-title {
+  overflow-wrap: anywhere;
+}
+
+.v-card-title {
+  white-space: normal;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgb(var(--v-theme-primary));
+  outline-offset: 3px;
+}
+
+.text-pre-wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -30,6 +30,13 @@ These rules are the top-priority repository instructions for agents working in `
 - Do not create Git commits automatically. Commit changes only when the developer explicitly requests a commit.
 - If something is ambiguous, ask 1-2 questions maximum; otherwise proceed.
 
+## Local checklist persistence
+
+- Checklist data must support automatic JSON persistence in a user-selected `Documents/QAChecklist` folder. Browser `localStorage` is a cache and must not be the only durable copy once folder access is configured.
+- Keep this application backend-free. Use the browser File System Access API for external files; IndexedDB may store only the optional directory handle, not checklist content.
+- Never overwrite an existing unreadable file or silently replace different disk and browser data. Read and validate the disk file before enabling writes, and require an explicit load or merge decision when needed.
+- Display file-write progress and failures accurately. Clearing browser data must not delete external JSON files; reconnecting the folder must allow the user to recover them.
+
 ## Core principles
 
 - Follow SOLID and clean code principles.
